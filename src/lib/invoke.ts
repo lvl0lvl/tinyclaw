@@ -5,7 +5,34 @@ import { AgentConfig, Settings, TeamConfig } from './types';
 import { SCRIPT_DIR, resolveClaudeModel, resolveCodexModel } from './config';
 import { log } from './logging';
 import { ensureAgentDirectory, updateAgentTeammates } from './agent-setup';
-import { enrichMessageWithMemory } from './memory';
+import { buildMemoryBlock } from './memory';
+
+const CLAUDE_MEMORY_FILENAME = 'MEMORY.md';
+
+function getClaudeMemoryFilePath(workingDir: string): string {
+    return path.join(workingDir, '.claude', CLAUDE_MEMORY_FILENAME);
+}
+
+function deleteClaudeMemoryFile(memoryFilePath: string): void {
+    if (fs.existsSync(memoryFilePath)) {
+        fs.unlinkSync(memoryFilePath);
+    }
+}
+
+function writeClaudeMemoryFile(memoryFilePath: string, memoryBlock: string): void {
+    const claudeDir = path.dirname(memoryFilePath);
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const body = memoryBlock.trim();
+    const content = [
+        '# Runtime Memory Context',
+        '',
+        'Auto-generated for the current invocation. Do not persist manually.',
+        '',
+        body,
+        '',
+    ].join('\n');
+    fs.writeFileSync(memoryFilePath, content, 'utf8');
+}
 
 export async function runCommand(command: string, args: string[], cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -77,10 +104,11 @@ export async function invokeAgent(
             : path.join(workspacePath, agent.working_directory))
         : agentDir;
 
-    const messageForModel = await enrichMessageWithMemory(agentId, message, settings, sourceChannel);
+    const memoryBlock = await buildMemoryBlock(agentId, message, settings, sourceChannel);
     const provider = agent.provider || 'anthropic';
 
     if (provider === 'openai') {
+        const messageForModel = memoryBlock ? `${message}${memoryBlock}` : message;
         log('INFO', `Using Codex CLI (agent: ${agentId})`);
 
         const shouldResume = !shouldReset;
@@ -134,8 +162,19 @@ export async function invokeAgent(
         if (continueConversation) {
             claudeArgs.push('-c');
         }
-        claudeArgs.push('-p', messageForModel);
+        claudeArgs.push('-p', message);
 
-        return await runCommand('claude', claudeArgs, workingDir);
+        const memoryFilePath = getClaudeMemoryFilePath(workingDir);
+        // Defensive cleanup in case previous invocation crashed before deleting.
+        deleteClaudeMemoryFile(memoryFilePath);
+        try {
+            if (memoryBlock) {
+                writeClaudeMemoryFile(memoryFilePath, memoryBlock);
+                log('INFO', `Memory source injection for @${agentId}: .claude/${CLAUDE_MEMORY_FILENAME}`);
+            }
+            return await runCommand('claude', claudeArgs, workingDir);
+        } finally {
+            deleteClaudeMemoryFile(memoryFilePath);
+        }
     }
 }

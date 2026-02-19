@@ -530,7 +530,7 @@ async function runBm25WithVariants(
     return { results: [], query: lastQuery };
 }
 
-export async function enrichMessageWithMemory(
+export async function buildMemoryBlock(
     agentId: string,
     message: string,
     settings: Settings,
@@ -538,10 +538,10 @@ export async function enrichMessageWithMemory(
 ): Promise<string> {
     const qmdCfg = getQmdConfig(settings);
     if (!qmdCfg.enabled) {
-        return message;
+        return '';
     }
     if (!shouldUseMemoryForChannel(sourceChannel)) {
-        return message;
+        return '';
     }
 
     const hasQmd = await isQmdAvailable(qmdCfg.command);
@@ -551,7 +551,7 @@ export async function enrichMessageWithMemory(
             qmdUnavailableLogged = true;
         }
         log('INFO', `Memory source for @${agentId}: none (qmd unavailable)`);
-        return message;
+        return '';
     }
     logQmdDebug(agentId, qmdCfg, 'qmd', `command=${qmdCommandPath || 'qmd'}`);
 
@@ -572,12 +572,12 @@ export async function enrichMessageWithMemory(
                 const hasQuickHit = await quickHasLexicalHit(message, collectionName, qmdCfg);
                 if (!hasQuickHit) {
                     log('INFO', `Memory source for @${agentId}: none (qmd precheck no-hit)`);
-                    return message;
+                    return '';
                 }
             } catch (error) {
                 log('WARN', `Memory quick precheck skipped for @${agentId}: ${(error as Error).message}`);
                 log('INFO', `Memory source for @${agentId}: none (qmd precheck error)`);
-                return message;
+                return '';
             }
         }
 
@@ -615,7 +615,7 @@ export async function enrichMessageWithMemory(
         logQmdDebug(agentId, qmdCfg, 'query-used', `mode=${mode.label} query=\"${query}\"`);
         if (results.length === 0) {
             log('INFO', `Memory source for @${agentId}: none (${mode.label} no-hit)`);
-            return message;
+            return '';
         }
 
         const rankedResults = rerankAndHydrateResults(results, message, agentId);
@@ -623,17 +623,27 @@ export async function enrichMessageWithMemory(
         const memoryBlock = formatMemoryPrompt(rankedResults, qmdCfg.maxChars);
         if (!memoryBlock) {
             log('INFO', `Memory source for @${agentId}: none (${mode.label} no-usable-snippet)`);
-            return message;
+            return '';
         }
 
         log('INFO', `Memory retrieval hit for @${agentId}: ${rankedResults.length} snippet(s) via ${mode.label}`);
         log('INFO', `Memory source for @${agentId}: ${mode.label}`);
-        return `${message}${memoryBlock}`;
+        return memoryBlock;
     } catch (error) {
         log('WARN', `Memory retrieval skipped for @${agentId}: ${(error as Error).message}`);
         log('INFO', `Memory source for @${agentId}: none (qmd error)`);
-        return message;
+        return '';
     }
+}
+
+export async function enrichMessageWithMemory(
+    agentId: string,
+    message: string,
+    settings: Settings,
+    sourceChannel: string
+): Promise<string> {
+    const memoryBlock = await buildMemoryBlock(agentId, message, settings, sourceChannel);
+    return memoryBlock ? `${message}${memoryBlock}` : message;
 }
 
 function timestampFilename(ts: number): string {
