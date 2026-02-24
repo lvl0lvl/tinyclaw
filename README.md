@@ -21,15 +21,6 @@
   <video src="https://github.com/user-attachments/assets/c5ef5d3c-d9cf-4a00-b619-c31e4380df2e" width="600" controls></video>
 </div>
 
-## Packages
-
-This is a monorepo containing:
-
-| Package | Description |
-|---------|-------------|
-| [`packages/tinyclaw`](packages/tinyclaw) | Core CLI and daemon — queue processor, channel clients, agent runtime |
-| [`packages/tinyoffice`](packages/tinyoffice) | Web portal (Next.js) — dashboard, chat console, task board, settings UI |
-
 ## ✨ Features
 
 - ✅ **Multi-agent** - Run multiple isolated AI agents with specialized roles
@@ -43,6 +34,15 @@ This is a monorepo containing:
 - ✅ **Persistent sessions** - Conversation context maintained across restarts
 - ✅ **SQLite queue** - Atomic transactions, retry logic, dead-letter management
 - ✅ **24/7 operation** - Runs in tmux for always-on availability
+
+## Packages
+
+This is a monorepo containing:
+
+| Package | Description |
+|---------|-------------|
+| [`packages/tinyclaw`](packages/tinyclaw) | Core CLI and daemon — queue processor, channel clients, agent runtime |
+| [`packages/tinyoffice`](packages/tinyoffice) | Web portal (Next.js) — dashboard, chat console, task board, settings UI |
 
 ## Community
 
