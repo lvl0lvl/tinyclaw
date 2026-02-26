@@ -14,6 +14,7 @@
     "test:observer": "tsc && node dist/test/test-observer.js"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.59",
     "@hono/node-server": "^1.19.9",
     "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.2.14",
