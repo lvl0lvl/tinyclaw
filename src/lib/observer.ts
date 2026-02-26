@@ -11,6 +11,7 @@ interface ObserverState {
     reflection_count: number;
     last_observed_at: string | null;
     current_task: string;
+    suggested_response?: string;
 }
 
 interface ParsedStreamJson {
@@ -52,6 +53,10 @@ export function formatObservationsPrompt(state: ObserverState): string {
 
     if (state.current_task) {
         parts.push(`<current-task>${state.current_task}</current-task>`);
+    }
+
+    if (state.suggested_response) {
+        parts.push(`<suggested-response>${state.suggested_response}</suggested-response>`);
     }
 
     parts.push(`<observations>${state.observations_text}</observations>`);
@@ -162,7 +167,7 @@ export async function runObserver(
                 '--project-root', agentDir,
                 '--agent-id', agentId,
                 '--provider', provider,
-                '--force',
+                '--token-threshold', '1000',
             ], {
                 cwd: agentDir,
                 stdio: ['ignore', 'pipe', 'pipe'],
