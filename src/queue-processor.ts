@@ -31,7 +31,6 @@ import {
     pruneAckedResponses, pruneCompletedMessages, closeQueueDb, queueEvents, DbMessage,
 } from './lib/db';
 import { handleLongResponse, collectFiles } from './lib/response';
-import { initObserver, observeInteraction } from './lib/observer';
 import {
     conversations, MAX_CONVERSATION_MESSAGES, enqueueInternalMessage, completeConversation,
     withConversationLock, incrementPending, decrementPending,
@@ -199,18 +198,6 @@ async function processMessage(dbMsg: DbMessage): Promise<void> {
             log('INFO', `✓ Response ready [${channel}] ${sender} via agent:${agentId} (${finalResponse.length} chars)`);
             emitEvent('response_ready', { channel, sender, agentId, responseLength: finalResponse.length, responseText: finalResponse, messageId });
 
-            // Observe this interaction (fire-and-forget)
-            const agentDir = path.join(workspacePath, agentId);
-            const observeDir = agent.working_directory
-                ? (path.isAbsolute(agent.working_directory)
-                    ? agent.working_directory
-                    : path.join(workspacePath, agent.working_directory))
-                : agentDir;
-            observeInteraction(agentId, observeDir, [
-                { role: 'user', content: rawMessage },
-                { role: 'assistant', content: response },
-            ]);
-
             dbCompleteMessage(dbMsg.id);
             return;
         }
@@ -372,7 +359,6 @@ const apiServer = startApiServer(conversations);
 
 log('INFO', 'Queue processor started (SQLite-backed)');
 logAgentConfig();
-initObserver(getSettings());
 emitEvent('processor_start', { agents: Object.keys(getAgents(getSettings())), teams: Object.keys(getTeams(getSettings())) });
 
 // Event-driven: all messages come through the API server (same process)

@@ -31,16 +31,6 @@ export interface ChainStep {
     response: string;
 }
 
-export interface ObserverSettings {
-    enabled: boolean;
-    python_path: string;      // default: 'python3'
-    observer_path: string;    // path to context_observer_mcp directory
-    provider: string;         // 'anthropic' or 'dummy'
-    store: string;            // 'graphwriter' or 'engram'
-    force: boolean;           // default: true (always run observation pass)
-    engram_db?: string;
-}
-
 export interface Settings {
     workspace?: {
         path?: string;
@@ -69,7 +59,6 @@ export interface Settings {
     monitoring?: {
         heartbeat_interval?: number;
     };
-    observer?: ObserverSettings;
 }
 
 export interface MessageData {
