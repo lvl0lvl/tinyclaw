@@ -178,7 +178,7 @@ async function processMessage(dbMsg: DbMessage): Promise<void> {
                 await runObserver(agentId, invokeResult.messages || [
                     { role: 'user', content: message },
                     { role: 'assistant', content: response },
-                ], workspacePath, 'anthropic');
+                ], workspacePath, 'claude');
             } catch (err) {
                 log('WARN', `Observer failed for ${agentId}: ${(err as Error).message}`);
             }
