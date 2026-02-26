@@ -5,6 +5,7 @@ import { CHATS_DIR, getSettings, getAgents } from './config';
 import { log, emitEvent } from './logging';
 import { enqueueMessage, enqueueResponse } from './db';
 import { handleLongResponse, collectFiles } from './response';
+import { observeInteraction } from './observer';
 
 // Active conversations — tracks in-flight team message passing
 export const conversations = new Map<string, Conversation>();
@@ -109,6 +110,22 @@ export function completeConversation(conv: Conversation): void {
         totalSteps: conv.responses.length,
         agents: conv.responses.map(s => s.agentId),
     });
+
+    // Observe each agent's interaction (fire-and-forget)
+    const workspacePath = settings?.workspace?.path || path.join(require('os').homedir(), 'tinyclaw-workspace');
+    for (const step of conv.responses) {
+        const stepAgent = agents[step.agentId];
+        const agentDir = path.join(workspacePath, step.agentId);
+        const observeDir = stepAgent?.working_directory
+            ? (path.isAbsolute(stepAgent.working_directory)
+                ? stepAgent.working_directory
+                : path.join(workspacePath, stepAgent.working_directory))
+            : agentDir;
+        observeInteraction(step.agentId, observeDir, [
+            { role: 'user', content: conv.originalMessage },
+            { role: 'assistant', content: step.response },
+        ]);
+    }
 
     // Aggregate responses
     let finalResponse: string;
