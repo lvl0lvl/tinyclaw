@@ -5,6 +5,15 @@ export interface AgentConfig {
     working_directory: string;
     system_prompt?: string;
     prompt_file?: string;
+    // Observer integration
+    observer_enabled?: boolean;
+    observer_model?: string;       // LLM for observer calls (default: "haiku")
+}
+
+export interface InvokeResult {
+    response: string;
+    messages?: Array<{ role: string; content: any }>;
+    sessionId?: string;
 }
 
 export interface TeamConfig {

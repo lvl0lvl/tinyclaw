@@ -1,10 +1,11 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { AgentConfig, TeamConfig } from './types';
+import { AgentConfig, TeamConfig, InvokeResult } from './types';
 import { SCRIPT_DIR, resolveClaudeModel, resolveCodexModel, resolveOpenCodeModel } from './config';
 import { log } from './logging';
 import { ensureAgentDirectory, updateAgentTeammates } from './agent';
+import { loadObserverState, formatObservationsPrompt, parseStreamJson } from './observer';
 
 export async function runCommand(command: string, args: string[], cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -45,7 +46,7 @@ export async function runCommand(command: string, args: string[], cwd?: string):
 
 /**
  * Invoke a single agent with a message. Contains all Claude/Codex invocation logic.
- * Returns the raw response text.
+ * Returns InvokeResult for observer-enabled agents, plain string otherwise.
  */
 export async function invokeAgent(
     agent: AgentConfig,
@@ -55,7 +56,7 @@ export async function invokeAgent(
     shouldReset: boolean,
     agents: Record<string, AgentConfig> = {},
     teams: Record<string, TeamConfig> = {}
-): Promise<string> {
+): Promise<string | InvokeResult> {
     // Ensure agent directory exists with config files
     const agentDir = path.join(workspacePath, agentId);
     const isNewAgent = !fs.existsSync(agentDir);
@@ -170,8 +171,35 @@ export async function invokeAgent(
         if (continueConversation) {
             claudeArgs.push('-c');
         }
+
+        // Observer integration: inject observations and use stream-json
+        if (agent.observer_enabled) {
+            const state = loadObserverState(agentId, workspacePath);
+            if (state?.observations_text) {
+                claudeArgs.push('--append-system-prompt', formatObservationsPrompt(state));
+
+                // Add continuation hint after reset
+                if (shouldReset) {
+                    message = `[Your previous conversation was cleared. Your observations contain your memory of past work. Pick up where you left off.]\n\n${message}`;
+                }
+            }
+            claudeArgs.push('--output-format', 'stream-json', '--verbose');
+        }
+
         claudeArgs.push('-p', message);
 
-        return await runCommand('claude', claudeArgs, workingDir);
+        const output = await runCommand('claude', claudeArgs, workingDir);
+
+        // For observer-enabled agents, parse structured output
+        if (agent.observer_enabled) {
+            const parsed = parseStreamJson(output);
+            return {
+                response: parsed.result || output,
+                messages: parsed.messages,
+                sessionId: parsed.sessionId,
+            };
+        }
+
+        return output;
     }
 }

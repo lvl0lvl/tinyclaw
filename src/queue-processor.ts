@@ -24,6 +24,8 @@ import {
 import { log, emitEvent } from './lib/logging';
 import { parseAgentRouting, findTeamForAgent, getAgentResetFlag, extractTeammateMentions } from './lib/routing';
 import { invokeAgent } from './lib/invoke';
+import { runObserver } from './lib/observer';
+import { InvokeResult } from './lib/types';
 import { startApiServer } from './server';
 import {
     initQueueDb, claimNextMessage, completeMessage as dbCompleteMessage,
@@ -158,13 +160,28 @@ async function processMessage(dbMsg: DbMessage): Promise<void> {
         // Invoke agent
         emitEvent('chain_step_start', { agentId, agentName: agent.name, fromAgent: messageData.fromAgent || null });
         let response: string;
+        let invokeResult: string | InvokeResult;
         try {
-            response = await invokeAgent(agent, agentId, message, workspacePath, shouldReset, agents, teams);
+            invokeResult = await invokeAgent(agent, agentId, message, workspacePath, shouldReset, agents, teams);
+            response = typeof invokeResult === 'string' ? invokeResult : invokeResult.response;
         } catch (error) {
             const provider = agent.provider || 'anthropic';
             const providerLabel = provider === 'openai' ? 'Codex' : provider === 'opencode' ? 'OpenCode' : 'Claude';
             log('ERROR', `${providerLabel} error (agent: ${agentId}): ${(error as Error).message}`);
             response = "Sorry, I encountered an error processing your request. Please check the queue logs.";
+            invokeResult = response;
+        }
+
+        // Run observer (within agent chain — sequential, no race condition)
+        if (agent.observer_enabled && typeof invokeResult !== 'string') {
+            try {
+                await runObserver(agentId, invokeResult.messages || [
+                    { role: 'user', content: message },
+                    { role: 'assistant', content: response },
+                ], workspacePath, 'anthropic');
+            } catch (err) {
+                log('WARN', `Observer failed for ${agentId}: ${(err as Error).message}`);
+            }
         }
 
         emitEvent('chain_step_done', { agentId, agentName: agent.name, responseLength: response.length, responseText: response });
