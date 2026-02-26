@@ -155,7 +155,8 @@ export async function runObserver(
 
     try {
         await new Promise<void>((resolve, reject) => {
-            const child = spawn('python3', [
+            const pythonBin = process.env.SWITCHBOARD_PYTHON || 'python3';
+            const child = spawn(pythonBin, [
                 '-m', 'switchboard.observer.hook',
                 '--messages-file', tmpFile,
                 '--project-root', agentDir,
@@ -165,7 +166,11 @@ export async function runObserver(
             ], {
                 cwd: agentDir,
                 stdio: ['ignore', 'pipe', 'pipe'],
-                env: { ...process.env },
+                env: {
+                    ...process.env,
+                    PYTHONPATH: [process.env.SWITCHBOARD_OBSERVER_SRC, process.env.PYTHONPATH]
+                        .filter(Boolean).join(path.delimiter),
+                },
             });
 
             let stderr = '';
