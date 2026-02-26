@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { subscribeToEvents, type EventData } from "./api";
+import { getObserverState, type ObserverResponse } from "./observer-api";
 
 /** Polls a fetcher at regular intervals. */
 export function usePolling<T>(
@@ -69,6 +70,64 @@ export function useSSE(maxEvents = 100): {
   }, [maxEvents]);
 
   return { events, connected };
+}
+
+/** Poll observer state for an agent, with adaptive interval.
+ *  Polls at 2s when the observer was active in the last 30s, otherwise at baseInterval.
+ */
+export function useObserverState(
+  agentId: string | null,
+  baseInterval = 5000
+): { data: ObserverResponse | null; error: string | null; loading: boolean; refresh: () => void } {
+  const [data, setData] = useState<ObserverResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const mountedRef = useRef(true);
+
+  const refresh = useCallback(async () => {
+    if (!agentId) return;
+    try {
+      const result = await getObserverState(agentId);
+      if (mountedRef.current) {
+        setData(result);
+        setError(null);
+      }
+    } catch (err) {
+      if (mountedRef.current) {
+        setError((err as Error).message);
+      }
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    if (!agentId) { setLoading(false); return; }
+    mountedRef.current = true;
+    refresh();
+
+    // Adaptive: check last_observed_at to decide poll speed
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const lastObs = data?.state.last_observed_at;
+      const isActive = lastObs
+        ? Date.now() - new Date(lastObs).getTime() < 30_000
+        : false;
+      const interval = isActive ? 2000 : baseInterval;
+      timer = setTimeout(async () => {
+        await refresh();
+        schedule();
+      }, interval);
+    };
+    schedule();
+
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timer);
+    };
+  }, [agentId, refresh, baseInterval, data?.state.last_observed_at]);
+
+  return { data, error, loading, refresh };
 }
 
 /** Format a timestamp to relative time. */

@@ -8,6 +8,8 @@ export interface AgentConfig {
     // Observer integration
     observer_enabled?: boolean;
     observer_model?: string;       // LLM for observer calls (default: "haiku")
+    observer_token_threshold?: number;
+    observer_reflection_threshold?: number;
 }
 
 export interface InvokeResult {

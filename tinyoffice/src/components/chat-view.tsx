@@ -19,6 +19,7 @@ import {
   AlertCircle,
   ArrowRight,
   Radio,
+  Brain,
 } from "lucide-react";
 
 interface FeedItem {
@@ -324,6 +325,12 @@ function FeedEntry({ item }: { item: FeedItem }) {
         ) : null}
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           {d.agentId ? <Badge variant="secondary" className="text-[10px]">@{String(d.agentId)}</Badge> : null}
+          {eventType === "chain_step_done" && (
+            <Badge variant="outline" className="text-[10px] gap-0.5 text-purple-500 border-purple-500/30">
+              <Brain className="h-2.5 w-2.5" />
+              Observed
+            </Badge>
+          )}
           {d.channel ? <Badge variant="outline" className="text-[10px]">{String(d.channel)}</Badge> : null}
           {d.sender ? (
             <span className="text-[10px] text-muted-foreground">from {String(d.sender)}</span>
