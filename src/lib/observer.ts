@@ -127,7 +127,8 @@ export async function runObserver(
     agentId: string,
     messages: Array<{ role: string; content: any }>,
     workspacePath: string,
-    provider: string = 'dummy'
+    provider: string = 'dummy',
+    tokenThreshold: number = 1000,
 ): Promise<void> {
     // Write messages to temp file
     const tmpFile = path.join(os.tmpdir(), `observer-${agentId}-${Date.now()}.json`);
@@ -167,7 +168,7 @@ export async function runObserver(
                 '--project-root', agentDir,
                 '--agent-id', agentId,
                 '--provider', provider,
-                '--token-threshold', '1000',
+                '--token-threshold', String(tokenThreshold),
             ], {
                 cwd: agentDir,
                 stdio: ['ignore', 'pipe', 'pipe'],

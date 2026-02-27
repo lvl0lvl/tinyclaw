@@ -32,6 +32,7 @@ interface FeedItem {
 // Chain mechanic events go to status bar, not the main feed
 const STATUS_BAR_EVENTS = new Set([
   "chain_step_start",
+  "chain_step_done",
   "chain_handoff",
   "team_chain_start",
   "team_chain_end",
@@ -348,6 +349,7 @@ function statusDotColor(type: string): string {
   switch (type) {
     case "agent_routed": return "bg-blue-500";
     case "chain_step_start": return "bg-yellow-500";
+    case "chain_step_done": return "bg-emerald-500";
     case "chain_handoff": return "bg-orange-500";
     case "team_chain_start": return "bg-purple-500";
     case "team_chain_end": return "bg-purple-400";

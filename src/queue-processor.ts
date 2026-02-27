@@ -174,10 +174,11 @@ async function processMessage(dbMsg: DbMessage): Promise<void> {
 
         // Run observer in background — don't block response delivery
         if (agent.observer_enabled && typeof invokeResult !== 'string') {
+            const tokenThreshold = agent.observer_token_threshold ?? 1000;
             runObserver(agentId, invokeResult.messages || [
                 { role: 'user', content: message },
                 { role: 'assistant', content: response },
-            ], workspacePath, 'claude').catch(err => log('WARN', `Observer failed for ${agentId}: ${(err as Error).message}`));
+            ], workspacePath, 'claude', tokenThreshold).catch(err => log('WARN', `Observer failed for ${agentId}: ${(err as Error).message}`));
         }
 
         emitEvent('chain_step_done', { agentId, agentName: agent.name, responseLength: response.length, responseText: response });

@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { Hono } from 'hono';
 import { getSettings, getAgents } from '../../lib/config';
@@ -20,8 +21,14 @@ interface ObserverState {
     suggested_response: string;
 }
 
-function readObserverState(agentDir: string): ObserverState {
-    const stateFile = path.join(agentDir, '.switchboard', 'observer_state.json');
+function getWorkspacePath(): string {
+    const settings = getSettings();
+    return settings?.workspace?.path || path.join(os.homedir(), 'tinyclaw-workspace');
+}
+
+function readObserverState(agentId: string): ObserverState {
+    const workspacePath = getWorkspacePath();
+    const stateFile = path.join(workspacePath, agentId, '.switchboard', agentId, 'observer_state.json');
     try {
         const raw = fs.readFileSync(stateFile, 'utf8');
         return JSON.parse(raw);
@@ -49,7 +56,7 @@ app.get('/api/agents/:id/observer', (c) => {
         return c.json({ error: `agent '${agentId}' not found` }, 404);
     }
 
-    const state = readObserverState(agent.working_directory);
+    const state = readObserverState(agentId);
 
     const config = {
         token_threshold: agent.observer_token_threshold ?? DEFAULT_TOKEN_THRESHOLD,
@@ -60,7 +67,8 @@ app.get('/api/agents/:id/observer', (c) => {
 
     // Try to read buffer state from the observer's buffer file
     let buffer = { message_count: 0, token_count: 0 };
-    const bufferFile = path.join(agent.working_directory, '.switchboard', 'buffer_state.json');
+    const workspacePath = getWorkspacePath();
+    const bufferFile = path.join(workspacePath, agentId, '.switchboard', agentId, 'buffer_state.json');
     try {
         const raw = fs.readFileSync(bufferFile, 'utf8');
         const parsed = JSON.parse(raw);
