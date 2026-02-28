@@ -129,6 +129,7 @@ export async function runObserver(
     workspacePath: string,
     provider: string = 'dummy',
     tokenThreshold: number = 1000,
+    reflectionThreshold: number = 40_000,
 ): Promise<void> {
     // Write messages to temp file
     const tmpFile = path.join(os.tmpdir(), `observer-${agentId}-${Date.now()}.json`);
@@ -153,6 +154,13 @@ export async function runObserver(
             return { role: msg.role, content: parts.join('\n') };
         }
         return msg;
+    }).map(msg => {
+        if (typeof msg.content !== 'string') return msg;
+        // Strip team routing artifacts before sending to observer
+        let content = msg.content;
+        content = content.replace(/^\[Message from teammate @[^\]]+\]:\n/, '');
+        content = content.replace(/\n\n------\n\n\[\d+ other teammate response\(s\) are still being processed[^\]]*\]/, '');
+        return { role: msg.role, content };
     });
 
     fs.writeFileSync(tmpFile, JSON.stringify(normalized, null, 2));
@@ -169,6 +177,7 @@ export async function runObserver(
                 '--agent-id', agentId,
                 '--provider', provider,
                 '--token-threshold', String(tokenThreshold),
+                '--reflection-threshold', String(reflectionThreshold),
             ], {
                 cwd: agentDir,
                 stdio: ['ignore', 'pipe', 'pipe'],

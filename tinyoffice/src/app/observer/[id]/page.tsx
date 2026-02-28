@@ -13,6 +13,7 @@ import { ObservationRenderer } from "@/components/observation-renderer";
 import {
   Brain, ArrowLeft, Eye, RefreshCw, Loader2,
   MessageSquare, Lightbulb, Save, ChevronDown, ChevronUp,
+  CheckCircle2, AlertCircle,
 } from "lucide-react";
 
 export default function ObserverDetailPage({
@@ -265,6 +266,8 @@ function ConfigCard({
   const [reflectVal, setReflectVal] = useState(String(reflectionThreshold));
   const [enabled, setEnabled] = useState(observerEnabled);
   const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleSave = async () => {
     setSaving(true);
@@ -275,6 +278,12 @@ function ConfigCard({
         observer_enabled: enabled,
       });
       onSaved();
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 3000);
+    } catch (err) {
+      setErrorMsg((err as Error).message);
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 5000);
     } finally {
       setSaving(false);
     }
@@ -327,10 +336,24 @@ function ConfigCard({
           </button>
           <span className="text-sm">Observer {enabled ? "enabled" : "disabled"}</span>
         </div>
-        <Button onClick={handleSave} disabled={saving} size="sm" className="gap-1.5">
-          {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-          Save Configuration
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={saving} size="sm" className="gap-1.5">
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+            Save Configuration
+          </Button>
+          {status === "saved" && (
+            <span className="flex items-center gap-1.5 text-sm text-emerald-500">
+              <CheckCircle2 className="h-4 w-4" />
+              Saved
+            </span>
+          )}
+          {status === "error" && (
+            <span className="flex items-center gap-1.5 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4" />
+              {errorMsg}
+            </span>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

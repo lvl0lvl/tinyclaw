@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { getSettings, updateSettings, type Settings } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -38,6 +39,31 @@ export default function SettingsPage() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const handleOverviewChange = (dotPath: string, value: string) => {
+    try {
+      const obj = JSON.parse(rawJson);
+      const keys = dotPath.split(".");
+      let cur = obj;
+      for (let i = 0; i < keys.length - 1; i++) {
+        if (cur[keys[i]] == null) cur[keys[i]] = {};
+        cur = cur[keys[i]];
+      }
+      const lastKey = keys[keys.length - 1];
+      // Preserve number types for numeric fields
+      const asNum = Number(value);
+      if (value !== "" && !isNaN(asNum) && lastKey.includes("interval")) {
+        cur[lastKey] = asNum;
+      } else if (lastKey === "enabled" && dotPath.includes("channels")) {
+        cur[lastKey] = value.split(",").map((s: string) => s.trim()).filter(Boolean);
+      } else {
+        cur[lastKey] = value;
+      }
+      const updated = JSON.stringify(obj, null, 2);
+      setRawJson(updated);
+      setSettings(obj);
+    } catch { /* rawJson isn't valid — ignore */ }
+  };
 
   const handleSave = async () => {
     try {
@@ -102,25 +128,34 @@ export default function SettingsPage() {
         <>
           {settings && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <OverviewCard
+              <EditableOverviewCard
                 icon={<FolderOpen className="h-4 w-4 text-muted-foreground" />}
                 title="Workspace"
-                value={settings.workspace?.name || settings.workspace?.path || "Default"}
+                value={settings.workspace?.name || settings.workspace?.path || ""}
+                path="workspace.name"
+                onChange={handleOverviewChange}
               />
-              <OverviewCard
+              <EditableOverviewCard
                 icon={<Cpu className="h-4 w-4 text-muted-foreground" />}
                 title="Default Provider"
                 value={settings.models?.provider || "anthropic"}
+                path="models.provider"
+                onChange={handleOverviewChange}
               />
-              <OverviewCard
+              <EditableOverviewCard
                 icon={<Wifi className="h-4 w-4 text-muted-foreground" />}
                 title="Channels"
-                value={settings.channels?.enabled?.join(", ") || "None"}
+                value={settings.channels?.enabled?.join(", ") || ""}
+                path="channels.enabled"
+                onChange={handleOverviewChange}
               />
-              <OverviewCard
+              <EditableOverviewCard
                 icon={<MessageSquare className="h-4 w-4 text-muted-foreground" />}
                 title="Heartbeat"
-                value={settings.monitoring?.heartbeat_interval ? `${settings.monitoring.heartbeat_interval}s` : "Disabled"}
+                value={settings.monitoring?.heartbeat_interval ? String(settings.monitoring.heartbeat_interval) : ""}
+                path="monitoring.heartbeat_interval"
+                placeholder="Interval in seconds"
+                onChange={handleOverviewChange}
               />
             </div>
           )}
@@ -172,7 +207,21 @@ export default function SettingsPage() {
   );
 }
 
-function OverviewCard({ icon, title, value }: { icon: React.ReactNode; title: string; value: string }) {
+function EditableOverviewCard({
+  icon,
+  title,
+  value,
+  path,
+  placeholder,
+  onChange,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: string;
+  path: string;
+  placeholder?: string;
+  onChange: (path: string, value: string) => void;
+}) {
   return (
     <Card>
       <CardContent className="p-4">
@@ -180,7 +229,12 @@ function OverviewCard({ icon, title, value }: { icon: React.ReactNode; title: st
           {icon}
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</span>
         </div>
-        <p className="text-sm font-medium truncate">{value}</p>
+        <Input
+          value={value}
+          onChange={(e) => onChange(path, e.target.value)}
+          placeholder={placeholder || title}
+          className="text-sm h-8"
+        />
       </CardContent>
     </Card>
   );

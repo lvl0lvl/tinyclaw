@@ -62,8 +62,36 @@ export function ChatView({
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [statusEvents, setStatusEvents] = useState<StatusBarEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const feedEndRef = useRef<HTMLDivElement>(null);
   const seenRef = useRef(new Set<string>());
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load persisted feed from localStorage on mount
+  useEffect(() => {
+    const storageKey = `chat-feed-${target}`;
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const items: FeedItem[] = JSON.parse(stored);
+        setFeed(items);
+      }
+    } catch { /* ignore corrupt data */ }
+  }, [target]);
+
+  // Debounced save to localStorage on feed changes
+  useEffect(() => {
+    if (feed.length === 0) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const storageKey = `chat-feed-${target}`;
+      // Cap at last 100 entries
+      const toStore = feed.slice(-100);
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(toStore));
+      } catch { /* storage full — ignore */ }
+    }, 500);
+  }, [feed, target]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -86,6 +114,13 @@ export function ChatView({
         }
 
         const eventType = String((event as Record<string, unknown>).type || "");
+
+        // Toggle processing indicator on chain lifecycle events
+        if (eventType === "chain_step_start") {
+          setProcessing(true);
+        } else if (eventType === "chain_step_done" || eventType === "response_ready") {
+          setProcessing(false);
+        }
 
         // Route chain mechanic events to the status bar
         if (STATUS_BAR_EVENTS.has(eventType)) {
@@ -201,6 +236,15 @@ export function ChatView({
             {feed.map((item) => (
               <FeedEntry key={item.id} item={item} />
             ))}
+            {processing && (
+              <div className="flex items-center gap-3 border-b border-border/50 pb-2 animate-slide-up">
+                <Loader2 className="h-3.5 w-3.5 mt-1 text-primary animate-spin shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">Processing</span>
+                  <p className="text-sm text-muted-foreground mt-0.5">Waiting for response...</p>
+                </div>
+              </div>
+            )}
             <div ref={feedEndRef} />
           </div>
         )}
