@@ -7,7 +7,7 @@
  * Setup: Create a bot via @BotFather on Telegram to get a bot token.
  */
 
-import TelegramBot from 'node-telegram-bot-api';
+import { Bot, InputFile, Context } from 'grammy';
 import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
@@ -170,10 +170,10 @@ function splitMessage(text: string, maxLength = 4096): string[] {
 async function sendTelegramMessage(
     chatId: number,
     text: string,
-    options: TelegramBot.SendMessageOptions = {},
+    options: Record<string, unknown> = {},
 ): Promise<void> {
     try {
-        await bot.sendMessage(chatId, text, {
+        await bot.api.sendMessage(chatId, text, {
             ...options,
             parse_mode: 'Markdown',
         });
@@ -184,7 +184,7 @@ async function sendTelegramMessage(
         }
 
         log('WARN', 'Failed to parse Telegram Markdown, retrying without Markdown parsing');
-        await bot.sendMessage(chatId, text, options);
+        await bot.api.sendMessage(chatId, text, options);
     }
 }
 
@@ -218,7 +218,7 @@ function downloadFile(url: string, destPath: string): Promise<void> {
 // Download a Telegram file by file_id and return the local path
 async function downloadTelegramFile(fileId: string, ext: string, messageId: string, originalName?: string): Promise<string | null> {
     try {
-        const file = await bot.getFile(fileId);
+        const file = await bot.api.getFile(fileId);
         if (!file.file_path) return null;
 
         const url = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${file.file_path}`;
@@ -257,15 +257,15 @@ function pairingMessage(code: string): string {
     ].join('\n');
 }
 
-// Initialize Telegram bot (polling mode)
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+// Initialize Telegram bot
+const bot = new Bot(TELEGRAM_BOT_TOKEN);
 
 // Bot ready
-bot.getMe().then(async (me: TelegramBot.User) => {
+bot.api.getMe().then(async (me) => {
     log('INFO', `Telegram bot connected as @${me.username}`);
 
     // Register bot commands so they appear in Telegram's "/" menu
-    await bot.setMyCommands([
+    await bot.api.setMyCommands([
         { command: 'agent', description: 'List available agents' },
         { command: 'team', description: 'List available teams' },
         { command: 'reset', description: 'Reset conversation history' },
@@ -278,7 +278,8 @@ bot.getMe().then(async (me: TelegramBot.User) => {
 });
 
 // Message received - Write to queue
-bot.on('message', async (msg: TelegramBot.Message) => {
+bot.on('message', async (ctx: Context) => {
+    const msg = ctx.message!;
     try {
         // Skip group/channel messages - only handle private chats
         if (msg.chat.type !== 'private') {
@@ -359,7 +360,7 @@ bot.on('message', async (msg: TelegramBot.Message) => {
         if (!pairing.approved && pairing.code) {
             if (pairing.isNewPending) {
                 log('INFO', `Blocked unpaired Telegram sender ${sender} (${senderId}) with code ${pairing.code}`);
-                await bot.sendMessage(msg.chat.id, pairingMessage(pairing.code), {
+                await bot.api.sendMessage(msg.chat.id, pairingMessage(pairing.code), {
                     reply_to_message_id: msg.message_id,
                 });
             } else {
@@ -372,7 +373,7 @@ bot.on('message', async (msg: TelegramBot.Message) => {
         if (msg.text && msg.text.trim().match(/^[!/]agent$/i)) {
             log('INFO', 'Agent list command received');
             const agentList = getAgentListText();
-            await bot.sendMessage(msg.chat.id, agentList, {
+            await bot.api.sendMessage(msg.chat.id, agentList, {
                 reply_to_message_id: msg.message_id,
             });
             return;
@@ -382,7 +383,7 @@ bot.on('message', async (msg: TelegramBot.Message) => {
         if (msg.text && msg.text.trim().match(/^[!/]team$/i)) {
             log('INFO', 'Team list command received');
             const teamList = getTeamListText();
-            await bot.sendMessage(msg.chat.id, teamList, {
+            await bot.api.sendMessage(msg.chat.id, teamList, {
                 reply_to_message_id: msg.message_id,
             });
             return;
@@ -391,7 +392,7 @@ bot.on('message', async (msg: TelegramBot.Message) => {
         // Check for reset command: /reset @agent_id [@agent_id2 ...]
         const resetMatch = messageText.trim().match(/^[!/]reset\s+(.+)$/i);
         if (messageText.trim().match(/^[!/]reset$/i)) {
-            await bot.sendMessage(msg.chat.id, 'Usage: /reset @agent_id [@agent_id2 ...]\nSpecify which agent(s) to reset.', {
+            await bot.api.sendMessage(msg.chat.id, 'Usage: /reset @agent_id [@agent_id2 ...]\nSpecify which agent(s) to reset.', {
                 reply_to_message_id: msg.message_id,
             });
             return;
@@ -415,11 +416,11 @@ bot.on('message', async (msg: TelegramBot.Message) => {
                     fs.writeFileSync(path.join(flagDir, 'reset_flag'), 'reset');
                     resetResults.push(`Reset @${agentId} (${agents[agentId].name}).`);
                 }
-                await bot.sendMessage(msg.chat.id, resetResults.join('\n'), {
+                await bot.api.sendMessage(msg.chat.id, resetResults.join('\n'), {
                     reply_to_message_id: msg.message_id,
                 });
             } catch {
-                await bot.sendMessage(msg.chat.id, 'Could not process reset command. Check settings.', {
+                await bot.api.sendMessage(msg.chat.id, 'Could not process reset command. Check settings.', {
                     reply_to_message_id: msg.message_id,
                 });
             }
@@ -427,7 +428,7 @@ bot.on('message', async (msg: TelegramBot.Message) => {
         }
 
         // Show typing indicator
-        await bot.sendChatAction(msg.chat.id, 'typing');
+        await bot.api.sendChatAction(msg.chat.id, 'typing');
 
         // Build message text with file references
         let fullMessage = messageText;
@@ -505,13 +506,13 @@ async function checkOutgoingQueue(): Promise<void> {
                                 if (!fs.existsSync(file)) continue;
                                 const ext = path.extname(file).toLowerCase();
                                 if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) {
-                                    await bot.sendPhoto(targetChatId, file);
+                                    await bot.api.sendPhoto(targetChatId, new InputFile(file));
                                 } else if (['.mp3', '.ogg', '.wav', '.m4a'].includes(ext)) {
-                                    await bot.sendAudio(targetChatId, file);
+                                    await bot.api.sendAudio(targetChatId, new InputFile(file));
                                 } else if (['.mp4', '.avi', '.mov', '.webm'].includes(ext)) {
-                                    await bot.sendVideo(targetChatId, file);
+                                    await bot.api.sendVideo(targetChatId, new InputFile(file));
                                 } else {
-                                    await bot.sendDocument(targetChatId, file);
+                                    await bot.api.sendDocument(targetChatId, new InputFile(file));
                                 }
                                 log('INFO', `Sent file to Telegram: ${path.basename(file)}`);
                             } catch (fileErr) {
@@ -561,29 +562,30 @@ setInterval(checkOutgoingQueue, 1000);
 // Refresh typing indicator every 4 seconds for pending messages
 setInterval(() => {
     for (const [, data] of pendingMessages.entries()) {
-        bot.sendChatAction(data.chatId, 'typing').catch(() => {
+        bot.api.sendChatAction(data.chatId, 'typing').catch(() => {
             // Ignore typing errors silently
         });
     }
 }, 4000);
 
-// Handle polling errors
-bot.on('polling_error', (error: Error) => {
-    log('ERROR', `Polling error: ${error.message}`);
+// Handle bot errors
+bot.catch((err) => {
+    log('ERROR', `Bot error: ${err.message}`);
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
     log('INFO', 'Shutting down Telegram client...');
-    bot.stopPolling();
+    bot.stop();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
     log('INFO', 'Shutting down Telegram client...');
-    bot.stopPolling();
+    bot.stop();
     process.exit(0);
 });
 
 // Start
 log('INFO', 'Starting Telegram client...');
+bot.start();
