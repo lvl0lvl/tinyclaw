@@ -6,6 +6,7 @@ import { SCRIPT_DIR, resolveClaudeModel, resolveCodexModel, resolveOpenCodeModel
 import { log } from './logging';
 import { ensureAgentDirectory, updateAgentTeammates } from './agent';
 import { loadObserverState, formatObservationsPrompt } from './observer';
+import { findTeamForAgent } from './routing';
 
 // Cached dynamic import for ESM SDK (TinyClaw compiles to CommonJS)
 let _sdkModule: any = null;
@@ -201,18 +202,13 @@ export async function invokeAgent(
         const sdk = await getSDK();
         const modelId = resolveClaudeModel(agent.model);
 
-        // Build system prompt with observer observations
-        let systemPrompt: string | { type: 'preset'; preset: 'claude_code'; append?: string } =
-            { type: 'preset', preset: 'claude_code' };
+        // Build system prompt with observer observations + team routing
+        let appendParts: string[] = [];
 
         if (agent.observer_enabled) {
             const state = loadObserverState(agentId, workspacePath);
             if (state?.observations_text) {
-                systemPrompt = {
-                    type: 'preset',
-                    preset: 'claude_code',
-                    append: formatObservationsPrompt(state),
-                };
+                appendParts.push(formatObservationsPrompt(state));
 
                 // Add continuation hint after reset
                 if (shouldReset) {
@@ -220,6 +216,31 @@ export async function invokeAgent(
                 }
             }
         }
+
+        // Inject team routing instructions when agent is in a team
+        const teamContext = findTeamForAgent(agentId, teams);
+        if (teamContext) {
+            const teammateIds = teamContext.team.agents.filter(id => id !== agentId);
+            if (teammateIds.length > 0) {
+                appendParts.push(
+                    `<team-routing>\n` +
+                    `You are agent "${agentId}" in team "${teamContext.teamId}".\n` +
+                    `Your teammates: ${teammateIds.join(', ')}\n\n` +
+                    `CRITICAL: To send a message to a teammate, you MUST include the tag ` +
+                    `[@teammate_id: your message] in your response text. ` +
+                    `This is the ONLY way to communicate with teammates. ` +
+                    `Do NOT use SendMessage, Task, or any other tool for teammate communication. ` +
+                    `Do NOT claim you sent a message unless you included the [@tag: msg] in your response.\n\n` +
+                    `Example: [@${teammateIds[0]}: Can you help with this task?]\n` +
+                    `</team-routing>`
+                );
+            }
+        }
+
+        let systemPrompt: string | { type: 'preset'; preset: 'claude_code'; append?: string } =
+            appendParts.length > 0
+                ? { type: 'preset', preset: 'claude_code', append: appendParts.join('\n\n') }
+                : { type: 'preset', preset: 'claude_code' };
 
         const options: any = {
             cwd: workingDir,
