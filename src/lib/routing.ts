@@ -84,6 +84,36 @@ export function extractTeammateMentions(
             }
         }
     }
+
+    // Fallback: bare @mentions when no bracket tags found
+    if (results.length === 0) {
+        const team = teams[teamId];
+        if (team) {
+            const bareRegex = /(?:^|\s)@(\S+)/g;
+            let bareMatch: RegExpExecArray | null;
+            while ((bareMatch = bareRegex.exec(response)) !== null) {
+                const rawId = bareMatch[1].toLowerCase().replace(/[.,!?;:]+$/, '');
+
+                // Resolve by agent ID or by agent name
+                let resolvedId = rawId;
+                if (!agents[resolvedId]) {
+                    for (const [id, config] of Object.entries(agents)) {
+                        if (config.name.toLowerCase() === rawId) {
+                            resolvedId = id;
+                            break;
+                        }
+                    }
+                }
+
+                if (!seen.has(resolvedId) && isTeammate(resolvedId, currentAgentId, teamId, teams, agents)) {
+                    log('INFO', `Bare @mention fallback matched: @${rawId} → ${resolvedId}`);
+                    results.push({ teammateId: resolvedId, message: response });
+                    seen.add(resolvedId);
+                }
+            }
+        }
+    }
+
     return results;
 }
 

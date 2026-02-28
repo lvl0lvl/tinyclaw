@@ -11,7 +11,9 @@
     "telegram": "node dist/channels/telegram-client.js",
     "queue": "node dist/queue-processor.js",
     "visualize": "node dist/visualizer/team-visualizer.js",
-    "test:observer": "tsc && node dist/test/test-observer.js"
+    "test:observer": "tsc && node dist/test/test-observer.js",
+    "test:routing": "tsc && node dist/test/test-routing.js",
+    "test:all": "tsc && node dist/test/test-observer.js && node dist/test/test-routing.js"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.59",
