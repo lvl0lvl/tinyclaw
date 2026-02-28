@@ -130,6 +130,8 @@ export async function runObserver(
     provider: string = 'dummy',
     tokenThreshold: number = 1000,
     reflectionThreshold: number = 40_000,
+    observerSrc?: string,
+    observerPython?: string,
 ): Promise<void> {
     // Write messages to temp file
     const tmpFile = path.join(os.tmpdir(), `observer-${agentId}-${Date.now()}.json`);
@@ -169,7 +171,11 @@ export async function runObserver(
 
     try {
         await new Promise<void>((resolve, reject) => {
-            const pythonBin = process.env.SWITCHBOARD_PYTHON || 'python3';
+            const pythonBin = observerPython || process.env.SWITCHBOARD_PYTHON || 'python3';
+            const srcPath = observerSrc || process.env.SWITCHBOARD_OBSERVER_SRC;
+            if (!srcPath) {
+                log('WARN', `Observer for ${agentId}: no observer source path configured. Set workspace.observer_src in settings or SWITCHBOARD_OBSERVER_SRC env var.`);
+            }
             const child = spawn(pythonBin, [
                 '-m', 'switchboard.observer.hook',
                 '--messages-file', tmpFile,
@@ -183,7 +189,7 @@ export async function runObserver(
                 stdio: ['ignore', 'pipe', 'pipe'],
                 env: {
                     ...process.env,
-                    PYTHONPATH: [process.env.SWITCHBOARD_OBSERVER_SRC, process.env.PYTHONPATH]
+                    PYTHONPATH: [srcPath, process.env.PYTHONPATH]
                         .filter(Boolean).join(path.delimiter),
                 },
             });

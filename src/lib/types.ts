@@ -46,6 +46,8 @@ export interface Settings {
     workspace?: {
         path?: string;
         name?: string;
+        observer_src?: string;    // Path to switchboard.observer package src/ directory
+        observer_python?: string; // Python binary for observer subprocess (needs 3.10+)
     };
     channels?: {
         enabled?: string[];
