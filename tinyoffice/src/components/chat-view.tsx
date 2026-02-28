@@ -39,6 +39,7 @@ const STATUS_BAR_EVENTS = new Set([
   "agent_routed",
   "processor_start",
   "message_enqueued",
+  "message_received",
 ]);
 
 interface StatusBarEvent {
@@ -195,7 +196,7 @@ export function ChatView({
   }, [message, target, sending]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -297,7 +298,7 @@ export function ChatView({
           </Button>
         </div>
         <p className="text-[10px] text-muted-foreground mt-1.5">
-          Ctrl+Enter to send
+          Enter to send, Shift+Enter for new line
         </p>
       </div>
     </div>

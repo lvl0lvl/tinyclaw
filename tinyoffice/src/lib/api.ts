@@ -180,23 +180,57 @@ export function subscribeToEvents(
   onEvent: (event: EventData) => void,
   onError?: (err: Event) => void
 ): () => void {
-  const es = new EventSource(`${API_BASE}/api/events/stream`);
+  let closed = false;
+  let es: EventSource | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectDelay = 1000;
 
-  const handler = (e: MessageEvent) => {
-    try { onEvent(JSON.parse(e.data)); } catch { /* ignore parse errors */ }
-  };
-
-  // Listen to all known event types
   const eventTypes = [
     "message_received", "agent_routed", "chain_step_start", "chain_step_done",
     "chain_handoff", "team_chain_start", "team_chain_end", "response_ready",
     "processor_start", "message_enqueued",
   ];
-  for (const type of eventTypes) {
-    es.addEventListener(type, handler);
+
+  function connect() {
+    if (closed) return;
+    es = new EventSource(`${API_BASE}/api/events/stream`);
+
+    const handler = (e: MessageEvent) => {
+      try { onEvent(JSON.parse(e.data)); } catch { /* ignore parse errors */ }
+    };
+
+    for (const type of eventTypes) {
+      es.addEventListener(type, handler);
+    }
+
+    es.onopen = () => { reconnectDelay = 1000; };
+
+    es.onerror = (err) => {
+      if (onError) onError(err);
+      if (closed) return;
+      es?.close();
+      reconnectTimer = setTimeout(() => {
+        reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+        connect();
+      }, reconnectDelay);
+    };
   }
 
-  if (onError) es.onerror = onError;
+  connect();
 
-  return () => es.close();
+  // Reconnect on tab visibility change
+  const onVisible = () => {
+    if (document.visibilityState === "visible" && es?.readyState === EventSource.CLOSED && !closed) {
+      reconnectDelay = 1000;
+      connect();
+    }
+  };
+  document.addEventListener("visibilitychange", onVisible);
+
+  return () => {
+    closed = true;
+    es?.close();
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    document.removeEventListener("visibilitychange", onVisible);
+  };
 }
