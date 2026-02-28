@@ -71,6 +71,7 @@ export function formatObservationsPrompt(state: ObserverState): string {
 /**
  * Parse NDJSON stream-json output from Claude CLI.
  * Extracts: result text, structured messages, session_id.
+ * @deprecated No longer used by the anthropic provider path (migrated to SDK).
  */
 export function parseStreamJson(ndjsonOutput: string): ParsedStreamJson {
     const lines = ndjsonOutput.trim().split('\n');
