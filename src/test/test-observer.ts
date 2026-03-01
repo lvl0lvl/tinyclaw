@@ -8,7 +8,7 @@ import assert from 'assert';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { parseStreamJson, formatObservationsPrompt, loadObserverState } from '../lib/observer';
+import { parseStreamJson, formatObservationsPrompt, loadObserverState, filterStaleTeamReferences } from '../lib/observer';
 
 // ── Fixtures ─────────────────────────────────────────────────
 
@@ -67,6 +67,7 @@ function testFormatObservationsPrompt() {
     assert.ok(prompt.includes('<current-task>Reviewing project structure</current-task>'), 'Missing current-task');
     assert.ok(prompt.includes('User prefers Python'), 'Missing observation text');
     assert.ok(prompt.includes('MOST RECENT'), 'Missing recency instruction');
+    assert.ok(prompt.includes('team-routing'), 'Missing team-routing staleness note');
 
     // Without current_task
     const stateNoTask = { ...state, current_task: '' };
@@ -74,6 +75,79 @@ function testFormatObservationsPrompt() {
     assert.ok(!promptNoTask.includes('<current-task>'), 'Should not include empty current-task tag');
 
     console.log('  PASS: testFormatObservationsPrompt');
+}
+
+function testFilterStaleTeamReferences() {
+    // Team structure assertions should be filtered
+    const input = [
+        '* HIGH (10:00) User wants to build a CLI tool',
+        '* MEDIUM (10:05) Your team includes @agent-a, @agent-b, and @agent-c',
+        '* HIGH (10:10) The project uses Python 3.13',
+        '* LOW (10:15) You are in team legal-research with osha-researcher',
+        '* MEDIUM (10:20) The database schema needs updating',
+        '* LOW (10:25) Team research-team with agent-x, agent-y comprises the analysis group',
+        '* LOW (10:26) Team dev-squad comprises the frontend and backend developers',
+        '* HIGH (10:30) The API endpoint returns 404',
+    ].join('\n');
+
+    const filtered = filterStaleTeamReferences(input);
+
+    // Non-team lines should be preserved
+    assert.ok(filtered.includes('User wants to build a CLI tool'), 'Should keep non-team observation');
+    assert.ok(filtered.includes('Python 3.13'), 'Should keep tech observation');
+    assert.ok(filtered.includes('database schema needs updating'), 'Should keep task observation');
+    assert.ok(filtered.includes('API endpoint returns 404'), 'Should keep bug observation');
+
+    // Team structure lines should be removed
+    assert.ok(!filtered.includes('Your team includes'), 'Should filter team roster');
+    assert.ok(!filtered.includes('You are in team'), 'Should filter team membership assertion');
+    assert.ok(!filtered.includes('Team research-team with'), 'Should filter team composition with agents');
+    assert.ok(!filtered.includes('Team dev-squad comprises'), 'Should filter team comprises pattern');
+
+    console.log('  PASS: testFilterStaleTeamReferences');
+}
+
+function testFilterPreservesNonTeamContent() {
+    // Lines that mention "team" in non-structural ways should be kept
+    const input = [
+        '* HIGH (10:00) The team discussed refactoring options',
+        '* MEDIUM (10:05) User wants team communication via Slack',
+        '* HIGH (10:10) The project uses teamwork-based approach',
+    ].join('\n');
+
+    const filtered = filterStaleTeamReferences(input);
+
+    assert.ok(filtered.includes('discussed refactoring options'), 'Should keep discussion reference');
+    assert.ok(filtered.includes('team communication via Slack'), 'Should keep feature request');
+    assert.ok(filtered.includes('teamwork-based approach'), 'Should keep general mention');
+
+    console.log('  PASS: testFilterPreservesNonTeamContent');
+}
+
+function testFilterHandlesEmptyInput() {
+    assert.strictEqual(filterStaleTeamReferences(''), '');
+    assert.strictEqual(filterStaleTeamReferences('\n\n'), '\n\n');
+    console.log('  PASS: testFilterHandlesEmptyInput');
+}
+
+function testFormatObservationsFiltersTeamReferences() {
+    // The full pipeline should filter team references from observations
+    const state = {
+        observations_text: '* HIGH (10:00) User prefers Python\n* MEDIUM (10:05) Your team includes @old-agent and @stale-agent\n* HIGH (10:10) Project uses FastAPI',
+        total_tokens_observed: 500,
+        observation_count: 3,
+        reflection_count: 0,
+        last_observed_at: '2026-02-28T10:00:00Z',
+        current_task: 'Building API',
+    };
+
+    const prompt = formatObservationsPrompt(state);
+
+    assert.ok(prompt.includes('User prefers Python'), 'Should keep relevant observation');
+    assert.ok(prompt.includes('Project uses FastAPI'), 'Should keep tech observation');
+    assert.ok(!prompt.includes('Your team includes'), 'Should filter team roster from prompt');
+
+    console.log('  PASS: testFormatObservationsFiltersTeamReferences');
 }
 
 function testLoadObserverState() {
@@ -186,6 +260,10 @@ function main() {
         testFormatObservationsPrompt,
         testLoadObserverState,
         testMessageNormalization,
+        testFilterStaleTeamReferences,
+        testFilterPreservesNonTeamContent,
+        testFilterHandlesEmptyInput,
+        testFormatObservationsFiltersTeamReferences,
     ];
 
     for (const test of tests) {

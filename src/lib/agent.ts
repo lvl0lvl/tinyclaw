@@ -4,7 +4,7 @@ import { AgentConfig, TeamConfig } from './types';
 import { SCRIPT_DIR } from './config';
 
 /**
- * Recursively copy directory
+ * Recursively copy directory, overwriting existing files.
  */
 export function copyDirSync(src: string, dest: string): void {
     fs.mkdirSync(dest, { recursive: true });
@@ -23,68 +23,86 @@ export function copyDirSync(src: string, dest: string): void {
 }
 
 /**
- * Ensure agent directory exists with template files copied from TINYCLAW_HOME.
- * Creates directory if it doesn't exist and copies .claude/, heartbeat.md, and AGENTS.md.
+ * Recursively copy directory, skipping files that already exist at destination.
+ */
+export function copyDirSyncNoOverwrite(src: string, dest: string): void {
+    fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+
+        if (entry.isDirectory()) {
+            copyDirSyncNoOverwrite(srcPath, destPath);
+        } else if (!fs.existsSync(destPath)) {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
+}
+
+/**
+ * Ensure agent directory exists with all required template files.
+ * Creates directory if missing, and repairs incomplete directories by
+ * copying any missing files without overwriting existing ones.
  */
 export function ensureAgentDirectory(agentDir: string): void {
-    if (fs.existsSync(agentDir)) {
-        return; // Directory already exists
-    }
-
     fs.mkdirSync(agentDir, { recursive: true });
 
-    // Copy .claude directory
     const sourceClaudeDir = path.join(SCRIPT_DIR, '.claude');
-    const targetClaudeDir = path.join(agentDir, '.claude');
-    if (fs.existsSync(sourceClaudeDir)) {
-        copyDirSync(sourceClaudeDir, targetClaudeDir);
-    }
-
-    // Copy heartbeat.md
     const sourceHeartbeat = path.join(SCRIPT_DIR, 'heartbeat.md');
-    const targetHeartbeat = path.join(agentDir, 'heartbeat.md');
-    if (fs.existsSync(sourceHeartbeat)) {
-        fs.copyFileSync(sourceHeartbeat, targetHeartbeat);
-    }
-
-    // Copy AGENTS.md
     const sourceAgents = path.join(SCRIPT_DIR, 'AGENTS.md');
-    const targetAgents = path.join(agentDir, 'AGENTS.md');
-    if (fs.existsSync(sourceAgents)) {
-        fs.copyFileSync(sourceAgents, targetAgents);
-    }
-
-    // Copy AGENTS.md as .claude/CLAUDE.md
-    if (fs.existsSync(sourceAgents)) {
-        fs.mkdirSync(path.join(agentDir, '.claude'), { recursive: true });
-        fs.copyFileSync(sourceAgents, path.join(agentDir, '.claude', 'CLAUDE.md'));
-    }
-
-    // Symlink skills directory into .claude/skills
-    // Prefer .agent/skills, fall back to .agents/skills
+    const sourceSoul = path.join(SCRIPT_DIR, 'SOUL.md');
     const sourceSkills = fs.existsSync(path.join(SCRIPT_DIR, '.agent', 'skills'))
         ? path.join(SCRIPT_DIR, '.agent', 'skills')
         : path.join(SCRIPT_DIR, '.agents', 'skills');
+
+    // Copy .claude directory (only missing files)
+    const targetClaudeDir = path.join(agentDir, '.claude');
+    if (fs.existsSync(sourceClaudeDir)) {
+        copyDirSyncNoOverwrite(sourceClaudeDir, targetClaudeDir);
+    }
+
+    // Copy heartbeat.md if missing
+    const targetHeartbeat = path.join(agentDir, 'heartbeat.md');
+    if (fs.existsSync(sourceHeartbeat) && !fs.existsSync(targetHeartbeat)) {
+        fs.copyFileSync(sourceHeartbeat, targetHeartbeat);
+    }
+
+    // Copy AGENTS.md if missing
+    const targetAgents = path.join(agentDir, 'AGENTS.md');
+    if (fs.existsSync(sourceAgents) && !fs.existsSync(targetAgents)) {
+        fs.copyFileSync(sourceAgents, targetAgents);
+    }
+
+    // Copy AGENTS.md as .claude/CLAUDE.md if missing
+    const targetClaudeMd = path.join(agentDir, '.claude', 'CLAUDE.md');
+    if (fs.existsSync(sourceAgents) && !fs.existsSync(targetClaudeMd)) {
+        fs.mkdirSync(path.join(agentDir, '.claude'), { recursive: true });
+        fs.copyFileSync(sourceAgents, targetClaudeMd);
+    }
+
+    // Symlink skills directory into .claude/skills if missing
     const targetClaudeSkills = path.join(agentDir, '.claude', 'skills');
     if (fs.existsSync(sourceSkills) && !fs.existsSync(targetClaudeSkills)) {
         fs.mkdirSync(path.join(agentDir, '.claude'), { recursive: true });
         fs.symlinkSync(sourceSkills, targetClaudeSkills);
     }
 
-    // Symlink .agent/skills to .claude/skills for agent-level access
+    // Symlink .agent/skills if missing
     const targetAgentDir = path.join(agentDir, '.agent');
     const targetAgentSkills = path.join(targetAgentDir, 'skills');
-    if (!fs.existsSync(targetAgentSkills)) {
+    if (fs.existsSync(sourceSkills) && !fs.existsSync(targetAgentSkills)) {
         fs.mkdirSync(targetAgentDir, { recursive: true });
         fs.symlinkSync(sourceSkills, targetAgentSkills);
     }
 
-    // Create .tinyclaw directory and copy SOUL.md
+    // Create .tinyclaw directory and copy SOUL.md if missing
     const targetTinyclaw = path.join(agentDir, '.tinyclaw');
     fs.mkdirSync(targetTinyclaw, { recursive: true });
-    const sourceSoul = path.join(SCRIPT_DIR, 'SOUL.md');
-    if (fs.existsSync(sourceSoul)) {
-        fs.copyFileSync(sourceSoul, path.join(targetTinyclaw, 'SOUL.md'));
+    const targetSoul = path.join(targetTinyclaw, 'SOUL.md');
+    if (fs.existsSync(sourceSoul) && !fs.existsSync(targetSoul)) {
+        fs.copyFileSync(sourceSoul, targetSoul);
     }
 }
 

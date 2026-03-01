@@ -46,6 +46,41 @@ export function loadObserverState(agentId: string, workspacePath: string): Obser
 }
 
 /**
+ * Strip team structure assertions from observation text.
+ * These become stale across conversations and mislead the agent about
+ * its current team configuration.
+ */
+export function filterStaleTeamReferences(text: string): string {
+    return text
+        .split('\n')
+        .filter(line => {
+            const lower = line.toLowerCase();
+            // Drop lines that assert team membership or structure
+            if (/\b(?:your team|my team|our team|the team)\b/i.test(line) &&
+                /\b(?:includes?|consists?|members?|comprises?|is made up of)\b/i.test(line)) {
+                return false;
+            }
+            if (/\b(?:teammates? (?:are|include)|team(?:mate)?.*?:.*?@)/i.test(line)) {
+                return false;
+            }
+            // Drop lines that look like team rosters: "team X with agent-a, agent-b"
+            if (/\bteam\b.+\bwith\b.+(?:agent|@)/i.test(line)) {
+                return false;
+            }
+            // Drop "team <name> ... comprises/consists of ..."
+            if (/\bteam\b.+\b(?:comprises?|consists? of|is made up of)\b/i.test(line)) {
+                return false;
+            }
+            // Drop lines asserting "you are in team X" or "part of team X"
+            if (/\b(?:you are|i am|agent is)\b.+\b(?:in|part of|on|member of)\b.+\bteam\b/i.test(line)) {
+                return false;
+            }
+            return true;
+        })
+        .join('\n');
+}
+
+/**
  * Build the system prompt injection block from observer state.
  */
 export function formatObservationsPrompt(state: ObserverState): string {
@@ -59,11 +94,13 @@ export function formatObservationsPrompt(state: ObserverState): string {
         parts.push(`<suggested-response>${state.suggested_response}</suggested-response>`);
     }
 
-    parts.push(`<observations>${state.observations_text}</observations>`);
+    const filteredObservations = filterStaleTeamReferences(state.observations_text);
+    parts.push(`<observations>${filteredObservations}</observations>`);
     parts.push('</observer-context>');
     parts.push('');
     parts.push('Reference specific details from these observations when relevant.');
     parts.push('Prefer the MOST RECENT information when observations conflict.');
+    parts.push('NOTE: Team structure information in observations may be stale. If a <team-routing> block is present, trust it over any team references here.');
 
     return parts.join('\n');
 }

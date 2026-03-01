@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { AgentConfig, TeamConfig, InvokeResult } from './types';
@@ -7,6 +8,9 @@ import { log } from './logging';
 import { ensureAgentDirectory, updateAgentTeammates } from './agent';
 import { loadObserverState, formatObservationsPrompt } from './observer';
 import { findTeamForAgent } from './routing';
+
+/** Default timeout for SDK query in milliseconds (2 minutes). */
+const SDK_QUERY_TIMEOUT_MS = 120_000;
 
 // Cached dynamic import for ESM SDK (TinyClaw compiles to CommonJS)
 let _sdkModule: any = null;
@@ -242,6 +246,13 @@ export async function invokeAgent(
                 ? { type: 'preset', preset: 'claude_code', append: appendParts.join('\n\n') }
                 : { type: 'preset', preset: 'claude_code' };
 
+        // Abort controller for timeout — prevents fresh sessions from hanging
+        const abortController = new AbortController();
+        const timeout = setTimeout(() => {
+            log('WARN', `SDK query timed out after ${SDK_QUERY_TIMEOUT_MS / 1000}s (agent: ${agentId})`);
+            abortController.abort();
+        }, SDK_QUERY_TIMEOUT_MS);
+
         const options: any = {
             cwd: workingDir,
             env: cleanEnvForSDK(),
@@ -249,6 +260,11 @@ export async function invokeAgent(
             allowDangerouslySkipPermissions: true,
             systemPrompt,
             tools: { type: 'preset' as const, preset: 'claude_code' as const },
+            maxTurns: 1,
+            abortController,
+            // Only load project-level settings; skip user-global settings
+            // that may configure heavy MCP servers (slack, playwright, etc.)
+            settingSources: ['project' as const],
         };
 
         if (modelId) {
@@ -256,6 +272,11 @@ export async function invokeAgent(
         }
         if (continueConversation) {
             options.continue = true;
+        } else {
+            // Fresh session: use a unique session ID and skip persistence
+            // to avoid loading stale session state
+            options.sessionId = crypto.randomUUID();
+            options.persistSession = false;
         }
 
         // Iterate the async generator, collect messages
@@ -263,27 +284,31 @@ export async function invokeAgent(
         let resultText = '';
         let sessionId = '';
 
-        const queryStream = sdk.query({ prompt: message, options });
-        for await (const msg of queryStream) {
-            if (msg.type === 'assistant' || msg.type === 'user') {
-                allMessages.push(msg as any);
-            }
+        try {
+            const queryStream = sdk.query({ prompt: message, options });
+            for await (const msg of queryStream) {
+                if (msg.type === 'assistant' || msg.type === 'user') {
+                    allMessages.push(msg as any);
+                }
 
-            // Track session_id from any message that has it
-            if ('session_id' in msg && msg.session_id && !sessionId) {
-                sessionId = msg.session_id;
-            }
-
-            if (msg.type === 'result') {
-                if (msg.subtype === 'success') {
-                    resultText = msg.result;
+                // Track session_id from any message that has it
+                if ('session_id' in msg && msg.session_id && !sessionId) {
                     sessionId = msg.session_id;
-                } else {
-                    // SDKResultError — throw to be caught by queue-processor
-                    const errorMsg = (msg as any).errors?.join('; ') || `SDK error: ${msg.subtype}`;
-                    throw new Error(errorMsg);
+                }
+
+                if (msg.type === 'result') {
+                    if (msg.subtype === 'success') {
+                        resultText = msg.result;
+                        sessionId = msg.session_id;
+                    } else {
+                        // SDKResultError — throw to be caught by queue-processor
+                        const errorMsg = (msg as any).errors?.join('; ') || `SDK error: ${msg.subtype}`;
+                        throw new Error(errorMsg);
+                    }
                 }
             }
+        } finally {
+            clearTimeout(timeout);
         }
 
         const observerMessages = collectObserverMessages(allMessages);
